@@ -30,5 +30,13 @@ Chrome の History からその日閲覧したページの履歴を取得する�
 
 ### Obsidian Export 機能
 
+- exportDailyNote.py
 - 取得したデータを Obsidian のデイリーノートに張り付ける
   - 必要に応じて、プロパティに追加する。
+
+## アーキテクチャ
+
+- 毎日午前0時03分に実行を開始する。
+  - exportDailyLocation.py → getLocationData.py
+  - getChromeHistory.py
+  - すべてが終わった後に、exportDailyNote.py を実行する。
