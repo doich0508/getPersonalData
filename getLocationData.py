@@ -1,3 +1,8 @@
+"""
+Google Maps Places API (New) を使用して、指定された日のタイムラインJSON内の訪問場所情報を更新するスクリプト。
+キャッシュ機能を備えており、既に取得した場所情報はCSVファイルに保存され、再利用されます。
+"""
+
 import json
 import csv
 import os
@@ -6,7 +11,6 @@ import argparse
 from dotenv import load_dotenv
 
 # --- 設定 ---
-# .env ファイルから環境変数を読み込む
 load_dotenv()
 API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 CACHE_CSV = "placeLocation.csv"
@@ -26,7 +30,7 @@ def load_cache(file_path):
     return cache
 
 def save_cache(file_path, cache):
-    """辞書形式の場所情報をCSVに保存する（placeLocationカラムを追加）"""
+    """辞書形式の場所情報をCSVに保存する"""
     with open(file_path, mode='w', encoding='utf-8', newline='') as f:
         fieldnames = ['placeID', 'name', 'address', 'placeLocation']
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -40,12 +44,11 @@ def save_cache(file_path, cache):
             })
 
 def get_place_details_from_api(place_id, api_key):
-    """Places API (New) を叩いて名前、住所、緯度経度を取得する"""
+    """Places API (New) を叩いて情報を取得する。取得できない場合はNoneを返す"""
     if not api_key:
-        print("エラー: APIキーが設定されていません。.envファイルを確認してください。")
+        print("エラー: APIキーが設定されていません。")
         return None
 
-    print(f"API実行中: {place_id}")
     url = f"https://places.googleapis.com/v1/places/{place_id}"
     headers = {
         "Content-Type": "application/json",
@@ -56,9 +59,10 @@ def get_place_details_from_api(place_id, api_key):
     
     try:
         response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status()
-        data = response.json()
+        if response.status_code != 200:
+            return None
         
+        data = response.json()
         loc = data.get("location", {})
         lat = loc.get("latitude")
         lng = loc.get("longitude")
@@ -69,23 +73,21 @@ def get_place_details_from_api(place_id, api_key):
             "address": data.get("formattedAddress", "Unknown Address"),
             "placeLocation": location_str
         }
-    except Exception as e:
-        print(f"APIエラー ({place_id}): {e}")
+    except:
         return None
 
 def main():
     # 1. コマンドライン引数の解析
-    parser = argparse.ArgumentParser(description="Google Map タイムラインJSONに場所名を追加します。")
-    parser.add_argument("date", help="対象日付を YYYY-MM-DD 形式で入力してください (例: 2026-01-08)")
+    parser = argparse.ArgumentParser(description="Google Map タイムラインJSON更新スクリプト")
+    parser.add_argument("date", help="対象日付 (YYYY-MM-DD)")
     args = parser.parse_args()
 
     target_date = args.date
     input_json = f"filtered_{target_date}.json"
     output_json = f"updated_{target_date}.json"
 
-    # 入力ファイルの存在確認
     if not os.path.exists(input_json):
-        print(f"エラー: 入力ファイル {input_json} が見つかりません。")
+        print(f"エラー: {input_json} が存在しません。")
         return
 
     # 2. キャッシュとJSONの読み込み
@@ -94,38 +96,52 @@ def main():
         timeline_data = json.load(f)
 
     updated_count = 0
+    skipped_count = 0
 
     # 3. データの処理
     for entry in timeline_data:
-        if "visit" in entry:
-            visit_info = entry["visit"]
-            top_candidate = visit_info.get("topCandidate", {})
-            place_id = top_candidate.get("placeID")
+        # 訪問(visit)データ以外はスキップ
+        if "visit" not in entry:
+            continue
+            
+        visit_info = entry["visit"]
+        top_candidate = visit_info.get("topCandidate", {})
+        place_id = top_candidate.get("placeID")
 
-            if place_id:
-                if place_id in cache:
-                    info = cache[place_id]
-                else:
-                    info = get_place_details_from_api(place_id, API_KEY)
-                    if info:
-                        cache[place_id] = info 
-                    else:
-                        continue
+        # placeIDがない場合は不明な場所としてスキップ
+        if not place_id:
+            skipped_count += 1
+            continue
 
-                top_candidate["name"] = info["name"]
-                top_candidate["formatted_address"] = info["address"]
-                top_candidate["placeLocation"] = info["placeLocation"]
-                updated_count += 1
+        # キャッシュ確認またはAPI取得
+        if place_id in cache:
+            info = cache[place_id]
+        else:
+            print(f"新規PlaceIDを照会中: {place_id}")
+            info = get_place_details_from_api(place_id, API_KEY)
+            
+            if info:
+                cache[place_id] = info 
+            else:
+                # APIでも取得できなかった場合はスキップ
+                print(f"場所を特定できませんでした。スキップします: {place_id}")
+                skipped_count += 1
+                continue
 
-    # 4. 成果物の保存
+        # JSON情報を更新
+        top_candidate["name"] = info["name"]
+        top_candidate["formatted_address"] = info["address"]
+        top_candidate["placeLocation"] = info["placeLocation"]
+        updated_count += 1
+
+    # 4. 保存
     save_cache(CACHE_CSV, cache)
     with open(output_json, 'w', encoding='utf-8') as f:
         json.dump(timeline_data, f, ensure_ascii=False, indent=2)
 
-    print(f"\n--- 処理完了 ---")
-    print(f"対象ファイル: {input_json}")
-    print(f"更新件数    : {updated_count} 件")
-    print(f"保存先      : {output_json}")
+    print(f"\n--- 完了 ({target_date}) ---")
+    print(f"成功: {updated_count} 件")
+    print(f"スキップ（不明な場所）: {skipped_count} 件")
 
 if __name__ == "__main__":
     main()

@@ -154,11 +154,18 @@ def main():
     # 4. JSON で出力する
     json_output = json.dumps(results, indent=2, ensure_ascii=False)
     
+    # --- 変更箇所 ---
+    # 前日の日付を取得してファイル名を生成
+    date_str = datetime.datetime.now()
+    date_str = date_str - datetime.timedelta(days=1)
+    date_str = date_str.strftime('%Y-%m-%d')
+    output_filename = f"{date_str}_history_output.json"
     
-    # ファイルに保存する場合
-    with open("history_output.json", "w", encoding="utf-8") as f:
+    # ファイルに保存
+    with open(output_filename, "w", encoding="utf-8") as f:
         f.write(json_output)
-    print("history_output.json に保存しました。")
+    print(f"{output_filename} に保存しました。")
+    # ----------------
 
 if __name__ == "__main__":
     main()
