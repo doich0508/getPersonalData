@@ -24,6 +24,10 @@ def main():
     # 環境変数からファイルパスを取得
     input_path = os.getenv("LOCATION_HISTORY_PATH")
 
+    # OS環境変数が設定されている場合は展開した値に上書きする。
+    if input_path:
+        input_path = os.path.expandvars(input_path)
+
     if not input_path:
         print("エラー: 環境変数 'LOCATION_HISTORY_PATH' が設定されていません。")
         print(".env ファイルを確認してください。")
