@@ -8,6 +8,7 @@ import csv
 import os
 import requests
 import argparse
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 # --- 設定 ---
@@ -56,7 +57,7 @@ def get_place_details_from_api(place_id, api_key):
         "X-Goog-FieldMask": "displayName,formattedAddress,location"
     }
     params = {"languageCode": "ja"}
-    
+
     try:
         response = requests.get(url, headers=headers, params=params)
         if response.status_code != 200:
@@ -67,7 +68,7 @@ def get_place_details_from_api(place_id, api_key):
         lat = loc.get("latitude")
         lng = loc.get("longitude")
         location_str = f"geo:{lat},{lng}" if lat and lng else ""
-        
+
         return {
             "name": data.get("displayName", {}).get("text", "Unknown Name"),
             "address": data.get("formattedAddress", "Unknown Address"),
@@ -79,10 +80,16 @@ def get_place_details_from_api(place_id, api_key):
 def main():
     # 1. コマンドライン引数の解析
     parser = argparse.ArgumentParser(description="Google Map タイムラインJSON更新スクリプト")
-    parser.add_argument("date", help="対象日付 (YYYY-MM-DD)")
+    parser.add_argument("date", nargs="?", help="対象日付 (YYYY-MM-DD)。指定しない場合は昨日が対象になります。")
     args = parser.parse_args()
 
-    target_date = args.date
+    # 日付指定がない場合は昨日を対象にする
+    if args.date is None:
+        target_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        print(f"日付が指定されなかったため、昨日 ({target_date}) を対象とします。")
+    else:
+        target_date = args.date
+
     input_json = f"filtered_{target_date}.json"
     output_json = f"updated_{target_date}.json"
 
@@ -92,6 +99,7 @@ def main():
 
     # 2. キャッシュとJSONの読み込み
     cache = load_cache(CACHE_CSV)
+    
     with open(input_json, 'r', encoding='utf-8') as f:
         timeline_data = json.load(f)
 
@@ -103,7 +111,7 @@ def main():
         # 訪問(visit)データ以外はスキップ
         if "visit" not in entry:
             continue
-            
+        
         visit_info = entry["visit"]
         top_candidate = visit_info.get("topCandidate", {})
         place_id = top_candidate.get("placeID")
@@ -121,7 +129,7 @@ def main():
             info = get_place_details_from_api(place_id, API_KEY)
             
             if info:
-                cache[place_id] = info 
+                cache[place_id] = info
             else:
                 # APIでも取得できなかった場合はスキップ
                 print(f"場所を特定できませんでした。スキップします: {place_id}")
@@ -136,6 +144,7 @@ def main():
 
     # 4. 保存
     save_cache(CACHE_CSV, cache)
+    
     with open(output_json, 'w', encoding='utf-8') as f:
         json.dump(timeline_data, f, ensure_ascii=False, indent=2)
 

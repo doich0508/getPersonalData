@@ -23,7 +23,7 @@ def main():
 
     # 環境変数からファイルパスを取得
     input_path = os.getenv("LOCATION_HISTORY_PATH")
-
+    
     # OS環境変数が設定されている場合は展開した値に上書きする。
     if input_path:
         input_path = os.path.expandvars(input_path)
@@ -33,11 +33,18 @@ def main():
         print(".env ファイルを確認してください。")
         return
 
-    # コマンドライン引数の設定 (日付のみ必須)
+    # コマンドライン引数の設定 (日付は任意)
     ap = argparse.ArgumentParser(description="Google Maps Timeline JSONから特定日(JST)を抽出 (.env対応版)")
-    ap.add_argument("day", help="抽出したい日 (YYYY-MM-DD)")
+    ap.add_argument("day", nargs="?", help="抽出したい日 (YYYY-MM-DD)。指定しない場合は昨日が対象になります。")
     ap.add_argument("-o", "--output", default=None, help="出力ファイル名 (省略可)")
+    
     args = ap.parse_args()
+
+    # 日付指定がない場合は昨日(JST)を対象にする
+    if args.day is None:
+        yesterday = datetime.now(JST) - timedelta(days=1)
+        args.day = yesterday.strftime("%Y-%m-%d")
+        print(f"日付が指定されなかったため、昨日 ({args.day}) を対象とします。")
 
     # 日付範囲の定義 (JST)
     try:
@@ -50,7 +57,7 @@ def main():
     day_end = day_start + timedelta(days=1)
 
     print(f"読み込みファイル: {input_path}")
-    print(f"抽出対象日:       {args.day} (JST)")
+    print(f"抽出対象日: {args.day} (JST)")
 
     # JSON読み込み
     try:
@@ -68,25 +75,23 @@ def main():
     for it in items:
         if "startTime" not in it or "endTime" not in it:
             continue
-            
+        
         st = parse_dt(it["startTime"])
         en = parse_dt(it["endTime"])
-        
+
         if overlaps(st, en, day_start, day_end):
             picked.append(it)
 
     # 保存処理
     out_path = args.output or f"filtered_{args.day}.json"
-    
     try:
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(picked, f, ensure_ascii=False, indent=2)
-            
+        
         print("-" * 30)
         print(f"元データ件数: {len(items)}")
-        print(f"抽出件数:     {len(picked)}")
-        print(f"保存完了:     {out_path}")
-        
+        print(f"抽出件数: {len(picked)}")
+        print(f"保存完了: {out_path}")
     except IOError as e:
         print(f"エラー: ファイルの書き込みに失敗しました。\n{e}")
 
