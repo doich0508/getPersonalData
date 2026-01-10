@@ -40,3 +40,28 @@ Chrome の History からその日閲覧したページの履歴を取得する�
   - exportDailyLocation.py → getLocationData.py
   - getChromeHistory.py
   - すべてが終わった後に、exportDailyNote.py を実行する。
+
+## 実行方法
+
+```powershell
+powershell.exe -Command "uv run main.py"
+```
+
+## 環境構築手順
+
+### 前提条件
+
+- Windows 11 を使用
+- 環境上に uv 未インストール
+- git for windows はインストール済み
+
+### 手順
+
+1. 以下のコマンドを実行して uv をインストールする。
+   - `irm https://astral.sh/uv/install.ps1 | iex`
+2. 以下のコマンドを実行して、git clone する。
+   - `git clone https://github.com/doich0508/getPersonalData`
+3. 以下のコマンドを実行して uv を初期化する。
+   - `uv sync`
+
+
