@@ -15,6 +15,22 @@ SCRIPT_DIR = Path(__file__).parent
 env_path = SCRIPT_DIR / ".env"
 load_dotenv(env_path)
 
+# 環境変数を展開する関数
+def expand_env_path(path_str):
+    if not path_str:
+        return None
+    expanded = os.path.expandvars(path_str)
+    return Path(expanded)
+
+# 設定の取得と展開
+_vault_path_raw = expand_env_path(os.getenv("VAULT_PATH"))
+if not _vault_path_raw:
+    raise ValueError("エラー: .envファイルに 'VAULT_PATH' が設定されていません。")
+VAULT_PATH: Path = _vault_path_raw
+
+daily_folder_raw = os.getenv("DAILY_NOTE_FOLDER", "")
+DAILY_NOTE_FOLDER_STR = os.path.expandvars(daily_folder_raw)
+
 try:
     DEFAULT_LAT = float(os.getenv("DEFAULT_LAT", "35.6812"))
     DEFAULT_LON = float(os.getenv("DEFAULT_LON", "139.7671"))
@@ -122,12 +138,18 @@ def update_weather_in_note(note_path, date_str, lat=None, lon=None):
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) < 3:
-        print("使用法: python update_weather.py <note_path> <date_str> [lat] [lon]")
-        sys.exit(1)
 
-    note_path = Path(sys.argv[1])
-    date_str = sys.argv[2]
+    # デフォルトの日付（前日）
+    today = datetime.date.today()
+    target_date = today - datetime.timedelta(days=1)
+    target_date_str = target_date.strftime("%Y-%m-%d")
+
+    # デフォルトのノートパス
+    daily_note_path = VAULT_PATH / DAILY_NOTE_FOLDER_STR / f"{target_date_str}.md"
+
+    # 引数処理
+    note_path = Path(sys.argv[1]) if len(sys.argv) > 1 else daily_note_path
+    date_str = sys.argv[2] if len(sys.argv) > 2 else target_date_str
     lat = float(sys.argv[3]) if len(sys.argv) > 3 else None
     lon = float(sys.argv[4]) if len(sys.argv) > 4 else None
 
