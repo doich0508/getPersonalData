@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import shutil
 from datetime import datetime, time, timedelta, timezone
 from dotenv import load_dotenv
 
@@ -18,82 +19,102 @@ def overlaps(start: datetime, end: datetime, win_start: datetime, win_end: datet
     return start < win_end and end > win_start
 
 def main():
-    # .env ファイルをロード
-    load_dotenv(dotenv_path=".env")
-
-    # 環境変数からファイルパスを取得
-    input_path = os.getenv("LOCATION_HISTORY_PATH")
-    
-    # OS環境変数が設定されている場合は展開した値に上書きする。
-    if input_path:
-        input_path = os.path.expandvars(input_path)
-
-    if not input_path:
-        print("エラー: 環境変数 'LOCATION_HISTORY_PATH' が設定されていません。")
-        print(".env ファイルを確認してください。")
-        return
-
-    # コマンドライン引数の設定 (日付は任意)
-    ap = argparse.ArgumentParser(description="Google Maps Timeline JSONから特定日(JST)を抽出 (.env対応版)")
-    ap.add_argument("day", nargs="?", help="抽出したい日 (YYYY-MM-DD)。指定しない場合は昨日が対象になります。")
-    ap.add_argument("-o", "--output", default=None, help="出力ファイル名 (省略可)")
-    
-    args = ap.parse_args()
-
-    # 日付指定がない場合は昨日(JST)を対象にする
-    if args.day is None:
-        yesterday = datetime.now(JST) - timedelta(days=1)
-        args.day = yesterday.strftime("%Y-%m-%d")
-        print(f"日付が指定されなかったため、昨日 ({args.day}) を対象とします。")
-
-    # 日付範囲の定義 (JST)
+    local_copy_path = None
     try:
-        target_date = datetime.strptime(args.day, "%Y-%m-%d").date()
-    except ValueError:
-        print("エラー: 日付の形式が正しくありません。YYYY-MM-DD で指定してください。")
-        return
+        # .env ファイルをロード
+        load_dotenv(dotenv_path=".env")
 
-    day_start = datetime.combine(target_date, time.min).replace(tzinfo=JST)
-    day_end = day_start + timedelta(days=1)
+        # 環境変数からファイルパスを取得
+        input_path = os.getenv("LOCATION_HISTORY_PATH")
 
-    print(f"読み込みファイル: {input_path}")
-    print(f"抽出対象日: {args.day} (JST)")
+        # OS環境変数が設定されている場合は展開した値に上書きする。
+        if input_path:
+            input_path = os.path.expandvars(input_path)
 
-    # JSON読み込み
-    try:
-        with open(input_path, "r", encoding="utf-8") as f:
-            items = json.load(f)
-    except FileNotFoundError:
-        print("エラー: 指定されたJSONファイルが見つかりません。パスを確認してください。")
-        return
-    except json.JSONDecodeError:
-        print("エラー: JSONファイルの形式が不正です。")
-        return
+        if not input_path:
+            print("エラー: 環境変数 'LOCATION_HISTORY_PATH' が設定されていません。")
+            print(".env ファイルを確認してください。")
+            return
 
-    # 抽出処理
-    picked = []
-    for it in items:
-        if "startTime" not in it or "endTime" not in it:
-            continue
-        
-        st = parse_dt(it["startTime"])
-        en = parse_dt(it["endTime"])
+        # コマンドライン引数の設定 (日付は任意)
+        ap = argparse.ArgumentParser(description="Google Maps Timeline JSONから特定日(JST)を抽出 (.env対応版)")
+        ap.add_argument("day", nargs="?", help="抽出したい日 (YYYY-MM-DD)。指定しない場合は昨日が対象になります。")
+        ap.add_argument("-o", "--output", default=None, help="出力ファイル名 (省略可)")
 
-        if overlaps(st, en, day_start, day_end):
-            picked.append(it)
+        args = ap.parse_args()
 
-    # 保存処理
-    out_path = args.output or f"filtered_{args.day}.json"
-    try:
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(picked, f, ensure_ascii=False, indent=2)
-        
-        print("-" * 30)
-        print(f"元データ件数: {len(items)}")
-        print(f"抽出件数: {len(picked)}")
-        print(f"保存完了: {out_path}")
-    except IOError as e:
-        print(f"エラー: ファイルの書き込みに失敗しました。\n{e}")
+        # 日付指定がない場合は昨日(JST)を対象にする
+        if args.day is None:
+            yesterday = datetime.now(JST) - timedelta(days=1)
+            args.day = yesterday.strftime("%Y-%m-%d")
+            print(f"日付が指定されなかったため、昨日 ({args.day}) を対象とします。")
+
+        # 日付範囲の定義 (JST)
+        try:
+            target_date = datetime.strptime(args.day, "%Y-%m-%d").date()
+        except ValueError:
+            print("エラー: 日付の形式が正しくありません。YYYY-MM-DD で指定してください。")
+            return
+
+        day_start = datetime.combine(target_date, time.min).replace(tzinfo=JST)
+        day_end = day_start + timedelta(days=1)
+
+        print(f"元ファイル: {input_path}")
+        print(f"抽出対象日: {args.day} (JST)")
+
+        # ファイルをローカルにコピー
+        local_copy_path = os.path.join(os.path.dirname(__file__), "local_location_history.json")
+        try:
+            shutil.copy(input_path, local_copy_path)
+            print(f"コピー完了: {local_copy_path}")
+        except IOError as e:
+            print(f"エラー: ファイルのコピーに失敗しました。\n{e}")
+            return
+
+        # JSON読み込み
+        try:
+            with open(local_copy_path, "r", encoding="utf-8") as f:
+                items = json.load(f)
+        except FileNotFoundError:
+            print("エラー: コピーしたJSONファイルが見つかりません。")
+            return
+        except json.JSONDecodeError:
+            print("エラー: JSONファイルの形式が不正です。")
+            return
+
+        # 抽出処理
+        picked = []
+        for it in items:
+            if "startTime" not in it or "endTime" not in it:
+                continue
+
+            st = parse_dt(it["startTime"])
+            en = parse_dt(it["endTime"])
+
+            if overlaps(st, en, day_start, day_end):
+                picked.append(it)
+
+        # 保存処理
+        out_path = args.output or f"filtered_{args.day}.json"
+        try:
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(picked, f, ensure_ascii=False, indent=2)
+
+            print("-" * 30)
+            print(f"元データ件数: {len(items)}")
+            print(f"抽出件数: {len(picked)}")
+            print(f"保存完了: {out_path}")
+        except IOError as e:
+            print(f"エラー: ファイルの書き込みに失敗しました。\n{e}")
+
+    finally:
+        # コピーしたファイルを削除
+        if local_copy_path and os.path.exists(local_copy_path):
+            try:
+                os.remove(local_copy_path)
+                print(f"コピーしたファイルを削除しました: {local_copy_path}")
+            except OSError:
+                pass  # 削除に失敗しても無視
 
 if __name__ == "__main__":
     main()
